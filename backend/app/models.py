@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List
 from sqlalchemy import (
@@ -20,7 +20,7 @@ line_id = Column(Integer, ForeignKey("assembly_lines.id"), nullable=False)
 belt_id = Column(Integer, ForeignKey("belts.id"), nullable=False)
 stage_id = Column(Integer, ForeignKey("stages.id"), nullable=False)
 status = Column(SqlEnum(PadStatus), default=PadStatus.IN_PROGRESS)
-created_at = Column(DateTime, default=datetime.utcnow)
+created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False)
 
 class AssemblyLine(Base):
 __tablename__ = "assembly_lines"
