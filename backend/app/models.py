@@ -29,6 +29,21 @@ name = Column(String, unique=True, nullable=False)
 belts = relationship("ConveyorBelt", back_populates="line", cascade="all, delete-orphan")
 stages = relationship("Stage", back_populates="line", cascade="all, delete-orphan")
 
+class ConveyorBelt(Base):
+__tablename__ = "belts"
+id = Column(Integer, primary_key=True)
+name = Column(String, nullable=False)
+line_id = Column(Integer, ForeignKey("assembly_lines.id"), nullable=False)
+line = relationship("AssemblyLine", back_populates="belts")
+
+class Stage(Base):
+__tablename__ = "stages"
+id = Column(Integer, primary_key=True)
+name = Column(String, nullable=False)
+sequence = Column(Integer, nullable=False)
+line_id = Column(Integer, ForeignKey("assembly_lines.id"), nullable=False)
+line = relationship("AssemblyLine", back_populates="stages")
+
 class PadStatus(str, Enum):
 IN_PROGRESS = "IN_PROGRESS"
 PASSED = "PASSED"
