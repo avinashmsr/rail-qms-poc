@@ -1,0 +1,2 @@
+export type LineStat = { line: string; total: number; passed: number; failed: number; in_progress: number };
+export type Pad = { id: string; serial_number: string; pad_type: string; line_id: number; belt_id: number; stage_id: number; status: string; created_at: string };
