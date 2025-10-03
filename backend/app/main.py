@@ -25,4 +25,4 @@ app.include_router(stats.router, prefix="/stats", tags=["stats"])
 
 @app.get("/")
 def root():
-return {"ok": True, "service": "Rail QMS PoC"}
+    return {"ok": True, "service": "Rail QMS PoC"}
