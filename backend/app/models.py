@@ -10,6 +10,15 @@ import uuid
 
 Base = declarative_base()
 
+class PadType(str, Enum):
+    TRANSIT = "TRANSIT"
+    FREIGHT = "FREIGHT"
+
+class PadStatus(str, Enum):
+    IN_PROGRESS = "IN_PROGRESS"
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+
 class BrakePad(Base):
     __tablename__ = "brake_pads"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
