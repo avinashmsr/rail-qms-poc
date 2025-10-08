@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import Dashboard from './views/Dashboard.vue'
 import Pads from './views/Pads.vue'
+import './styles.css'
 
 const router = createRouter({
   history: createWebHistory(),
