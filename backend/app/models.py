@@ -53,7 +53,17 @@ class Stage(Base):
     line_id = Column(Integer, ForeignKey("assembly_lines.id"), nullable=False)
     line = relationship("AssemblyLine", back_populates="stages")
 
-class PadStatus(str, Enum):
-    IN_PROGRESS = "IN_PROGRESS"
-    PASSED = "PASSED"
-    FAILED = "FAILED"
+class MaterialMix(Base):
+    __tablename__ = "material_mixes"
+    id = Column(Integer, primary_key=True)
+    brakepad_id = Column(String, ForeignKey("brake_pads.id"), nullable=False)
+    resin_pct = Column(Float)
+    fiber_pct = Column(Float)
+    metal_powder_pct = Column(Float)
+    filler_pct = Column(Float)
+    abrasives_pct = Column(Float)
+    binder_pct = Column(Float)
+    temp_c = Column(Float)
+    pressure_mpa = Column(Float)
+    cure_time_s = Column(Float)
+    moisture_pct = Column(Float)
