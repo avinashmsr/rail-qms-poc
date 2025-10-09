@@ -36,3 +36,6 @@ def create_pads(db: Session, count: int, line_ids: list[int], belt_ids_map: dict
         pads.append(pad)
     db.commit()
     return pads
+
+def generate_synthetic_pads(db, count: int, lines: int = 2, belts_per_line: int = 3):
+    return create_pads(db, count=count, lines=lines, belts_per_line=belts_per_line)
