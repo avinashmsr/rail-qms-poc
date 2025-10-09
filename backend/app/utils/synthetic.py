@@ -2,61 +2,80 @@ from __future__ import annotations
 
 import random
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from ..models import AssemblyLine, ConveyorBelt, Stage, BrakePad
-# enums may be present in your models; tolerate both enum and str usage
-try:
-    from ..models import PadStatus, PadType  # type: ignore
-except Exception:
-    PadStatus = None  # type: ignore
-    PadType = None    # type: ignore
+from ..models import (
+    AssemblyLine,
+    ConveyorBelt,
+    Stage,
+    BrakePad,
+    MaterialMix,    # <-- back in
+    PadStatus,      # <-- direct enum imports (no try/except)
+    PadType,
+)
+
+def _random_mix() -> dict:
+    """
+    Make a plausible material composition that sums to 100 (%),
+    plus a few process parameters.
+    """
+    # Random weights -> normalize to 100, then round & fix remainder
+    parts = [random.uniform(0.5, 1.5) for _ in range(5)]
+    total = sum(parts)
+    pct = [p / total * 100 for p in parts]
+
+    # Assign names and round
+    names = ["resin_pct", "metal_fiber_pct", "friction_modifier_pct", "binder_pct", "filler_pct"]
+    rounded = [int(round(x)) for x in pct]
+    # Fix rounding drift to sum exactly 100
+    drift = 100 - sum(rounded)
+    rounded[-1] += drift
+
+    mix = dict(zip(names, rounded))
+    # Add process params
+    mix.update({
+        "mix_temp_c": int(random.uniform(80, 140)),     # mix temperature
+        "press_ton": round(random.uniform(20, 60), 1),  # press force (tons)
+        "cure_minutes": int(random.uniform(30, 120)),   # cure time
+    })
+    return mix
 
 
-def _to_enum_or_str(enum_cls, name: str):
-    """Return enum value if enum_cls exists, else the raw string."""
-    if enum_cls is None:
-        return name
-    try:
-        return getattr(enum_cls, name)
-    except Exception:
-        try:
-            return enum_cls(name)
-        except Exception:
-            return name
+def _coerce_enum(value_str: str, enum_cls) -> object:
+    """Coerce a string to the Enum member; raise if invalid -> fail fast."""
+    return getattr(enum_cls, value_str)
 
 
 def create_pads(
     db: Session,
     count: int,
-    lines: int = 2,
+    lines: int = 2,               # for API compatibility; we use existing seeded lines
     belts_per_line: int = 3,
+    create_mixes: bool = True,    # <-- default ON
 ) -> List[BrakePad]:
     """
     Create 'count' synthetic BrakePad rows distributed across existing lines/belts/stages.
-    - If belts/stages are missing for a line, minimal ones are created.
-    - Requires that /setup/seed has already created at least one AssemblyLine.
+    If a line has no belts/stages yet, minimal ones are created. Optionally creates a
+    MaterialMix per pad for ML features.
+
+    Requires that /setup/seed has already created at least one AssemblyLine.
     """
     line_rows = db.execute(select(AssemblyLine)).scalars().all()
     if not line_rows:
         raise RuntimeError("No assembly lines found. Run /setup/seed first.")
 
-    # Ensure each line has belts/stages (idempotent-ish)
+    # Ensure belts/stages per line (idempotent-ish)
     belts_by_line = {}
     stages_by_line = {}
     for ln in line_rows:
-        belts = db.execute(
-            select(ConveyorBelt).where(ConveyorBelt.line_id == ln.id)
-        ).scalars().all()
+        belts = db.execute(select(ConveyorBelt).where(ConveyorBelt.line_id == ln.id)).scalars().all()
         if not belts:
             for b in range(1, belts_per_line + 1):
                 db.add(ConveyorBelt(name=f"Belt {b}", line_id=ln.id))
             db.flush()
-            belts = db.execute(
-                select(ConveyorBelt).where(ConveyorBelt.line_id == ln.id)
-            ).scalars().all()
+            belts = db.execute(select(ConveyorBelt).where(ConveyorBelt.line_id == ln.id)).scalars().all()
 
         stages = db.execute(
             select(Stage).where(Stage.line_id == ln.id).order_by(Stage.sequence)
@@ -82,44 +101,54 @@ def create_pads(
     for i in range(count):
         ln = rng.choice(line_rows)
         belt = rng.choice(belts_by_line[ln.id])
-        # bias toward early stages but allow any
-        stages = stages_by_line[ln.id]
-        stage = stages[min(rng.randint(0, len(stages) - 1), rng.randint(0, len(stages) - 1))]
+        stage = rng.choice(stages_by_line[ln.id])
 
         ptype_str = "TRANSIT" if rng.random() < 0.5 else "FREIGHT"
         status_roll = rng.random()
-        if status_roll < 0.65:
-            status_str = "PASSED"
-        elif status_roll < 0.85:
-            status_str = "IN_PROGRESS"
-        else:
-            status_str = "FAILED"
+        status_str = "PASSED" if status_roll < 0.65 else ("IN_PROGRESS" if status_roll < 0.85 else "FAILED")
 
         serial_prefix = "TR" if ptype_str == "TRANSIT" else "FR"
         serial_number = f"{serial_prefix}-{ln.id:02d}-{belt.id:02d}-{i+1:05d}"
 
         pad = BrakePad(
             serial_number=serial_number,
-            pad_type=_to_enum_or_str(PadType, ptype_str),
-            status=_to_enum_or_str(PadStatus, status_str),
+            pad_type=_coerce_enum(ptype_str, PadType),
+            status=_coerce_enum(status_str, PadStatus),
             line_id=ln.id,
             belt_id=belt.id,
             stage_id=stage.id,
             created_at=datetime.now(timezone.utc),
         )
         db.add(pad)
+        db.flush()  # need pad.id for MaterialMix FK
+
+        if create_mixes:
+            mix = _random_mix()
+            db.add(MaterialMix(
+                pad_id=pad.id,
+                resin_pct=mix["resin_pct"],
+                metal_fiber_pct=mix["metal_fiber_pct"],
+                friction_modifier_pct=mix["friction_modifier_pct"],
+                binder_pct=mix["binder_pct"],
+                filler_pct=mix["filler_pct"],
+                mix_temp_c=mix["mix_temp_c"],
+                press_ton=mix["press_ton"],
+                cure_minutes=mix["cure_minutes"],
+                created_at=datetime.now(timezone.utc),
+            ))
+
         pads_created.append(pad)
 
-    db.flush()   # assign IDs
     db.commit()
     return pads_created
 
 
-# Wrapper with the name you used elsewhere; keeps API compatibility
+# Wrapper function - Convenience alias - other parts of the app expect this name
 def generate_synthetic_pads(
     db: Session,
     count: int,
     lines: int = 2,
-    belts_per_line: int = 3
+    belts_per_line: int = 3,
+    create_mixes: bool = True,
 ):
-    return create_pads(db, count=count, lines=lines, belts_per_line=belts_per_line)
+    return create_pads(db, count=count, lines=lines, belts_per_line=belts_per_line, create_mixes=create_mixes)
