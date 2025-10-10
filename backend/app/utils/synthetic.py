@@ -10,27 +10,29 @@ from ..models import (
     AssemblyLine, ConveyorBelt, Stage, BrakePad, MaterialMix, PadStatus, PadType
 )
 
-def _random_mix() -> dict:
+def _random_mix_fields() -> dict:
     """
+    Return a dict that matches MaterialMix columns EXACTLY.
     Make a plausible material composition that sums to 100 (%),
     plus a few process parameters.
     """
-    # Random weights -> normalize to 100, then round & fix remainder
-    parts = [random.uniform(0.5, 1.5) for _ in range(5)]
+    # 6 components that sum ~100 | Random weights -> normalize to 100, then round & fix remainder
+    parts = [random.uniform(0.5, 1.5) for _ in range(6)]
     total = sum(parts)
     pct = [p / total * 100 for p in parts]
     # Assign names and round
-    names = ["resin_pct", "metal_fiber_pct", "friction_modifier_pct", "binder_pct", "filler_pct"]
-    rounded = [int(round(x)) for x in pct]
-    # Fix rounding drift to sum exactly 100
-    drift = 100 - sum(rounded)
-    rounded[-1] += drift
+    names = ["resin_pct", "fiber_pct", "metal_powder_pct", "filler_pct", "abrasives_pct", "binder_pct"]
+    rounded = [round(x, 2) for x in pct] # keep as floats for Float columns
+    # Adjust last one so total is ~100.00
+    drift = 100.0 - sum(rounded)
+    rounded[-1] = round(rounded[-1] + drift, 2)
     mix = dict(zip(names, rounded))
     # Add process params
     mix.update({
-        "mix_temp_c": int(random.uniform(80, 140)), # mix temperature
-        "press_ton": round(random.uniform(20, 60), 1), # press force (tons)
-        "cure_minutes": int(random.uniform(30, 120)), # cure time
+        "temp_c": round(random.uniform(80, 160), 1), # mix temperature
+        "pressure_mpa": round(random.uniform(5, 20), 2), # press force (tons)
+        "cure_time_s": int(random.uniform(900, 5400)), # cure time
+        "moisture_pct": round(random.uniform(0.0, 2.0), 2)
     })
     return mix
 
@@ -89,8 +91,8 @@ def create_pads(
         stage = rng.choice(stages_by_line[ln.id])
 
         ptype_str = "TRANSIT" if rng.random() < 0.5 else "FREIGHT"
-        status_roll = rng.random()
-        status_str = "PASSED" if status_roll < 0.65 else ("IN_PROGRESS" if status_roll < 0.85 else "FAILED")
+        
+        status_str = "PASSED" if (r := rng.random()) < 0.65 else ("IN_PROGRESS" if r < 0.85 else "FAILED")
 
         now = datetime.now(timezone.utc)
         batch_code = _make_batch_code(ln.id, belt.id, now, rng)
@@ -112,18 +114,10 @@ def create_pads(
         db.flush() # need pad.id for MaterialMix FK
 
         if create_mixes:
-            mix = _random_mix()
+            mix = _random_mix_fields()
             db.add(MaterialMix(
-                brakepad = pad, # <- attach by relationship
-                resin_pct=mix["resin_pct"],
-                metal_fiber_pct=mix["metal_fiber_pct"],
-                friction_modifier_pct=mix["friction_modifier_pct"],
-                binder_pct=mix["binder_pct"],
-                filler_pct=mix["filler_pct"],
-                mix_temp_c=mix["mix_temp_c"],
-                press_ton=mix["press_ton"],
-                cure_minutes=mix["cure_minutes"],
-                created_at=now,
+                brakepad_id=pad.id,  # <-- matches your FK column
+                **mix
             ))
 
         pads_created.append(pad)
