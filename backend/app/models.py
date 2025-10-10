@@ -30,6 +30,8 @@ class BrakePad(Base):
     stage_id = Column(Integer, ForeignKey("stages.id"), nullable=False)
     status = Column(SqlEnum(PadStatus), default=PadStatus.IN_PROGRESS)
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False)
+    material_mix = relationship("MaterialMix", back_populates="brakepad", uselist=False,
+                                cascade="all, delete-orphan")
 
 class AssemblyLine(Base):
     __tablename__ = "assembly_lines"
@@ -56,7 +58,7 @@ class Stage(Base):
 class MaterialMix(Base):
     __tablename__ = "material_mixes"
     id = Column(Integer, primary_key=True)
-    brakepad_id = Column(String, ForeignKey("brake_pads.id"), nullable=False)
+    brakepad_id = Column(String, ForeignKey("brake_pads.id"), nullable=False, unique=True)
     resin_pct = Column(Float)
     fiber_pct = Column(Float)
     metal_powder_pct = Column(Float)
@@ -67,3 +69,4 @@ class MaterialMix(Base):
     pressure_mpa = Column(Float)
     cure_time_s = Column(Float)
     moisture_pct = Column(Float)
+    brakepad = relationship("BrakePad", back_populates="material_mix")
