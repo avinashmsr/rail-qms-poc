@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..deps import get_db
 from ..utils.seed import seed_factory
@@ -12,30 +12,40 @@ def seed(db: Session = Depends(get_db)):
     return seed_factory(db)
 
 @router.post("/generate")
-def generate(count: int = 150, lines: int = 2, belts_per_line: int = 3,
-             db: Session = Depends(get_db)):
+def generate(count: int = 150, lines: int = 2, belts_per_line: int = 3, db: Session = Depends(get_db)):
     """
     1) Create synthetic BrakePad rows in DB
     2) Generate synthetic images for those pads
     3) Return a compact summary
     """
-    # 1) DB rows
-    pads = generate_synthetic_pads(db, count=count, lines=lines, belts_per_line=belts_per_line)
+    # 1) Create pads in DB
+    try:
+        pads = generate_synthetic_pads(db, count=count, lines=lines, belts_per_line=belts_per_line, create_mixes=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"generate_synthetic_pads failed: {e!s}")
 
-    # 2) Images tied to those pads (serial/type/stage if available)
+    # 2) Build image metadata from pads (be tolerant of Enum vs str)
+    def to_pad_type(pt):
+        try:
+            return pt.value if hasattr(pt, "value") else str(pt)
+        except Exception:
+            return "TRANSIT"
+
     pad_infos = []
     for p in pads:
-        pad_type = getattr(p, "pad_type", "TRANSIT")
-        if hasattr(pad_type, "value"):
-            pad_type = pad_type.value
         pad_infos.append({
-            "id": p.id,
+            "id": getattr(p, "id", None),
             "serial_number": getattr(p, "serial_number", None),
-            "pad_type": pad_type,
+            "pad_type": to_pad_type(getattr(p, "pad_type", "TRANSIT")),
             "stage_name": getattr(getattr(p, "stage", None), "name", None),
         })
 
-    images = generate_image_set(count=len(pad_infos), pad_infos=pad_infos)
+    # 3) Generate images
+    try:
+        images = generate_image_set(count=len(pad_infos) or count, pad_infos=pad_infos or None)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"generate_image_set failed: {e!s}")
+
     return {
         "status": "ok",
         "pads_created": len(pads),
