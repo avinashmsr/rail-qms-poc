@@ -114,7 +114,7 @@ def create_pads(
         if create_mixes:
             mix = _random_mix()
             db.add(MaterialMix(
-                pad_id=pad.id,
+                brakepad = pad, # <- attach by relationship
                 resin_pct=mix["resin_pct"],
                 metal_fiber_pct=mix["metal_fiber_pct"],
                 friction_modifier_pct=mix["friction_modifier_pct"],
