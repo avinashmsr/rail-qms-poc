@@ -8,10 +8,14 @@ type Pad = {
   line_id: number
   belt_id: number
   stage_id: number
+  stage_name?: string | null     // ensure backend returns these
+  stage_seq?: number | null
   status: string
-  created_at: string
   batch_code?: string | null
+  created_at: string
 }
+
+type StageOpt = { id: number; name: string; sequence: number; line_id: number }
 
 const api = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -23,20 +27,28 @@ const page = ref(1)
 const pageSize = ref<number>(parseInt(localStorage.getItem('pads_page_size') || '20', 10))
 const total = ref(0)
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
 // ✅ SORTING state
 const sortBy = ref<string>('created_at')
 const sortDir = ref<'asc' | 'desc'>('desc')
-// Filters
-const fStatus = ref<string>('')         // '', PASSED, FAILED, IN_PROGRESS
-const fType = ref<string>('')           // '', TRANSIT, FREIGHT
-const fLine = ref<string>('')           // numeric string
-const fBelt = ref<string>('')
-const fStage = ref<string>('')
-const fQuery = ref<string>('')          // search serial/batch
+
+// FILTERS (add stage dropdown)
+const fStatus = ref<string>('')    // PASSED/FAILED/IN_PROGRESS
+const fType   = ref<string>('')    // TRANSIT/FREIGHT
+const fLine   = ref<string>('')    // numeric
+const fBelt   = ref<string>('')    // numeric
+const fStageId = ref<string>('')   // NEW: stage_id selected from dropdown
+const fQuery  = ref<string>('')    // free text
+
+// Stage options
+const stageOptions = ref<StageOpt[]>([])              
+async function loadStageOptions() {                   
+  const res = await fetch(`${api}/stages`)
+  stageOptions.value = await res.json()
+}
 
 async function load() {
-  loading.value = true
-  error.value = null
+  loading.value = true; error.value = null
   try {
     // Pagination, Sorting: included in request
     const params = new URLSearchParams({
@@ -45,13 +57,13 @@ async function load() {
       sort_by: sortBy.value,
       sort_dir: sortDir.value,
     })
-
+    // Filtering: included in request
     if (fStatus.value) params.append('status', fStatus.value)
-    if (fType.value) params.append('pad_type', fType.value)
-    if (fLine.value) params.append('line_id', fLine.value)
-    if (fBelt.value) params.append('belt_id', fBelt.value)
-    if (fStage.value) params.append('stage_id', fStage.value)
-    if (fQuery.value) params.append('q', fQuery.value.trim())
+    if (fType.value)   params.append('pad_type', fType.value)
+    if (fLine.value)   params.append('line_id', fLine.value)
+    if (fBelt.value)   params.append('belt_id', fBelt.value)
+    if (fStageId.value) params.append('stage_id', fStageId.value)   
+    if (fQuery.value)  params.append('q', fQuery.value.trim())
 
     const res = await fetch(`${api}/pads?${params.toString()}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -67,18 +79,10 @@ async function load() {
   }
 }
 
-function nextPage() {
-  if (page.value < pages.value) {
-    page.value += 1
-    load()
-  }
-}
-function prevPage() {
-  if (page.value > 1) {
-    page.value -= 1
-    load()
-  }
-}
+function nextPage(){ if(page.value < pages.value){ page.value++; load() } }
+
+function prevPage(){ if(page.value > 1){ page.value--; load() } }
+
 function changePageSize(e: Event) {
   const val = parseInt((e.target as HTMLSelectElement).value, 10)
   pageSize.value = val
@@ -89,12 +93,8 @@ function changePageSize(e: Event) {
 
 // SORTING: toggle when clicking a header
 function toggleSort(col: string) {
-  if (sortBy.value === col) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = col
-    sortDir.value = 'asc'
-  }
+  if (sortBy.value === col) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  else { sortBy.value = col; sortDir.value = 'asc' }
   page.value = 1
   load()
 }
@@ -104,12 +104,13 @@ function sortGlyph(col: string) {
   return sortDir.value === 'asc' ? '↑' : '↓'
 }
 
+
 function resetFilters() {
   fStatus.value = ''
   fType.value = ''
   fLine.value = ''
   fBelt.value = ''
-  fStage.value = ''
+  fStageId.value = ''          
   fQuery.value = ''
   page.value = 1
   load()
@@ -118,7 +119,10 @@ function resetFilters() {
 // if page size changes elsewhere, reload
 watch(pageSize, () => { page.value = 1; load() })
 
-onMounted(load)
+onMounted(async () => {
+  await loadStageOptions()
+  await load()
+})
 </script>
 
 <template>
@@ -180,9 +184,15 @@ onMounted(load)
         <input v-model="fBelt" type="number" min="1" class="rounded-md border border-slate-300 px-2 py-1 text-sm w-24" />
       </div>
 
+      <!-- Stage dropdown -->
       <div class="flex flex-col">
         <label class="text-xs text-slate-500">Stage</label>
-        <input v-model="fStage" type="number" min="1" class="rounded-md border border-slate-300 px-2 py-1 text-sm w-24" />
+        <select v-model="fStageId" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm min-w-[220px]">
+          <option value="">All stages</option>
+          <option v-for="s in stageOptions" :key="s.id" :value="s.id">
+            {{ s.sequence }} · {{ s.name }} (Line {{ s.line_id }})
+          </option>
+        </select>
       </div>
 
       <div class="flex flex-col flex-1 min-w-[220px]">
@@ -223,8 +233,8 @@ onMounted(load)
             <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('belt_id')">
               Belt <span class="ml-1 opacity-60">{{ sortGlyph('belt_id') }}</span>
             </th>
-            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('stage_id')">
-              Stage <span class="ml-1 opacity-60">{{ sortGlyph('stage_id') }}</span>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('stage_seq')">
+              Stage <span class="ml-1 opacity-60">{{ sortGlyph('stage_seq') }}</span>
             </th>
             <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('status')">
               Status <span class="ml-1 opacity-60">{{ sortGlyph('status') }}</span>
