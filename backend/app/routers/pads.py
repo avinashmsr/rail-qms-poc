@@ -47,9 +47,16 @@ def _list_pads_impl(
         )
 
     # Validate & build sorting
-    col = SORT_MAP.get(sort_by)
-    if col is None:
-        raise HTTPException(status_code=400, detail=f"Invalid sort_by: {sort_by}")
+    # Decide sort column (support stage sequence/name via JOIN)
+    join_stage = False
+    if sort_by in ("stage_seq", "stage_name"):          
+        col = Stage.sequence if sort_by == "stage_seq" else Stage.name
+        join_stage = True
+    else:
+        col = SORT_MAP.get(sort_by)
+        if col is None:
+            raise HTTPException(status_code=400, detail=f"Invalid sort_by: {sort_by}")
+
     order = col.asc() if sort_dir.lower() == "asc" else col.desc()
 
     # Total (filtered)
@@ -58,9 +65,12 @@ def _list_pads_impl(
     page = min(page, pages)
 
     # Page slice
+    q_base = db.query(BrakePad)
+    if join_stage:
+        q_base = q_base.join(Stage, Stage.id == BrakePad.stage_id) # (JOIN only when needed for stage sorting)
     qset = (
-        db.query(BrakePad)
-        .options(joinedload(BrakePad.stage))      # avoid N+1
+        q_base
+        .options(joinedload(BrakePad.stage))      # for stage_name/seq display, avoid N+1
         .filter(*filters)
         .order_by(order, BrakePad.id.asc())  # tie-breaker for stable paging
         .offset((page - 1) * page_size)
@@ -135,7 +145,7 @@ def list_pads_alias1(
     pad_type: list[str] | None = Query(None),
     line_id: int | None = Query(None),
     belt_id: int | None = Query(None),
-    stage_id: int | None = Query(None),
+    stage_id: int | None = Query(None), # ← filter by stage via dropdown (ID)
     q: str | None = Query(None, description="Search serial_number or batch_code"),
     db: Session = Depends(get_db)
 ):
