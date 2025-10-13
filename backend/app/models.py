@@ -32,6 +32,8 @@ class BrakePad(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.now(timezone.utc), nullable=False)
     material_mix = relationship("MaterialMix", back_populates="brakepad", uselist=False,
                                 cascade="all, delete-orphan")
+    # NEW: relationship so we can joinedload it
+    stage = relationship("Stage", back_populates="pads")
 
 class AssemblyLine(Base):
     __tablename__ = "assembly_lines"
@@ -54,6 +56,8 @@ class Stage(Base):
     sequence = Column(Integer, nullable=False)
     line_id = Column(Integer, ForeignKey("assembly_lines.id"), nullable=False)
     line = relationship("AssemblyLine", back_populates="stages")
+    # NEW: backref to pads
+    pads = relationship("BrakePad", back_populates="stage")
 
 class MaterialMix(Base):
     __tablename__ = "material_mixes"
