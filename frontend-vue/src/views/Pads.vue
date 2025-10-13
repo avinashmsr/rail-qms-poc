@@ -23,14 +23,20 @@ const page = ref(1)
 const pageSize = ref<number>(parseInt(localStorage.getItem('pads_page_size') || '20', 10))
 const total = ref(0)
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+// ✅ SORTING state
+const sortBy = ref<string>('created_at')
+const sortDir = ref<'asc' | 'desc'>('desc')
 
 async function load() {
   loading.value = true
   error.value = null
   try {
+    // Pagination, Sorting: included in request
     const params = new URLSearchParams({
       page: String(page.value),
       page_size: String(pageSize.value),
+      sort_by: sortBy.value,
+      sort_dir: sortDir.value,
     })
     const res = await fetch(`${api}/pads?${params.toString()}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -66,6 +72,23 @@ function changePageSize(e: Event) {
   load()
 }
 
+// SORTING: toggle when clicking a header
+function toggleSort(col: string) {
+  if (sortBy.value === col) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = col
+    sortDir.value = 'asc'
+  }
+  page.value = 1
+  load()
+}
+
+function sortGlyph(col: string) {
+  if (sortBy.value !== col) return '↕'
+  return sortDir.value === 'asc' ? '↑' : '↓'
+}
+
 // if page size changes elsewhere, reload
 watch(pageSize, () => { page.value = 1; load() })
 
@@ -99,22 +122,40 @@ onMounted(load)
       </div>
     </div>
 
+    <!-- Errors -->
     <div v-if="error" class="rounded-lg bg-rose-50 p-3 text-rose-700 text-sm">
       {{ error }}
     </div>
 
+    <!-- Table -->
     <div class="rounded-2xl border bg-white p-4 shadow-sm overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
-          <tr class="text-left text-slate-500">
-            <th class="py-2 pr-3">Serial</th>
-            <th class="py-2 pr-3">Type</th>
-            <th class="py-2 pr-3">Line</th>
-            <th class="py-2 pr-3">Belt</th>
-            <th class="py-2 pr-3">Stage</th>
-            <th class="py-2 pr-3">Status</th>
-            <th class="py-2 pr-3">Batch</th>
-            <th class="py-2 pr-3">Created</th>
+          <tr class="text-left text-slate-500 select-none">
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('serial_number')">
+              Serial <span class="ml-1 opacity-60">{{ sortGlyph('serial_number') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('pad_type')">
+              Type <span class="ml-1 opacity-60">{{ sortGlyph('pad_type') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('line_id')">
+              Line <span class="ml-1 opacity-60">{{ sortGlyph('line_id') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('belt_id')">
+              Belt <span class="ml-1 opacity-60">{{ sortGlyph('belt_id') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('stage_id')">
+              Stage <span class="ml-1 opacity-60">{{ sortGlyph('stage_id') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('status')">
+              Status <span class="ml-1 opacity-60">{{ sortGlyph('status') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('batch_code')">
+              Batch <span class="ml-1 opacity-60">{{ sortGlyph('batch_code') }}</span>
+            </th>
+            <th class="py-2 pr-3 cursor-pointer" @click="toggleSort('created_at')">
+              Created <span class="ml-1 opacity-60">{{ sortGlyph('created_at') }}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -155,21 +196,13 @@ onMounted(load)
       </div>
 
       <div class="flex items-center gap-2">
-        <button
-          class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="page <= 1"
-          @click="prevPage"
-        >
+        <button class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+                :disabled="page <= 1" @click="prevPage">
           ← Prev
         </button>
-
         <span class="text-sm text-slate-600">Page {{ page }} of {{ pages }}</span>
-
-        <button
-          class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="page >= pages"
-          @click="nextPage"
-        >
+        <button class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+                :disabled="page >= pages" @click="nextPage">
           Next →
         </button>
       </div>
