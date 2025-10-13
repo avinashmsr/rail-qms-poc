@@ -1,32 +1,106 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
+
 type Pad = {
-  id: number; serial_number: string; pad_type: string;
-  line_id: number; belt_id: number; stage_id: number;
-  status: string; created_at: string;
+  id: number | string
+  serial_number: string
+  pad_type: string
+  line_id: number
+  belt_id: number
+  stage_id: number
+  status: string
+  created_at: string
+  batch_code?: string | null
 }
+
 const api = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 const rows = ref<Pad[]>([])
-const loading = ref(true)
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+const page = ref(1)
+const pageSize = ref<number>(parseInt(localStorage.getItem('pads_page_size') || '20', 10))
+const total = ref(0)
+const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+
 async function load() {
   loading.value = true
-  const res = await fetch(`${api}/pads`)
-  rows.value = await res.json()
-  loading.value = false
+  error.value = null
+  try {
+    const params = new URLSearchParams({
+      page: String(page.value),
+      page_size: String(pageSize.value),
+    })
+    const res = await fetch(`${api}/pads?${params.toString()}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    rows.value = data.items
+    total.value = data.total
+    // keep server-normalized values (if page capped)
+    page.value = data.page
+  } catch (e: any) {
+    error.value = e?.message ?? 'Failed to load pads'
+  } finally {
+    loading.value = false
+  }
 }
+
+function nextPage() {
+  if (page.value < pages.value) {
+    page.value += 1
+    load()
+  }
+}
+function prevPage() {
+  if (page.value > 1) {
+    page.value -= 1
+    load()
+  }
+}
+function changePageSize(e: Event) {
+  const val = parseInt((e.target as HTMLSelectElement).value, 10)
+  pageSize.value = val
+  localStorage.setItem('pads_page_size', String(val))
+  page.value = 1
+  load()
+}
+
+// if page size changes elsewhere, reload
+watch(pageSize, () => { page.value = 1; load() })
+
 onMounted(load)
 </script>
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 class="text-xl font-semibold">Pads</h2>
-        <p class="text-slate-500">Latest 500 pads across all lines</p>
+        <p class="text-slate-500">Paginated list of brake pads</p>
       </div>
-      <button @click="load" class="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">
-        Refresh
-      </button>
+
+      <div class="flex items-center gap-3">
+        <label class="text-sm text-slate-600">Rows per page:</label>
+        <select
+          class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"
+          :value="pageSize"
+          @change="changePageSize"
+        >
+          <option :value="10">10</option>
+          <option :value="20">20</option>
+          <option :value="30">30</option>
+          <option :value="50">50</option>
+        </select>
+
+        <button @click="load" class="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div v-if="error" class="rounded-lg bg-rose-50 p-3 text-rose-700 text-sm">
+      {{ error }}
     </div>
 
     <div class="rounded-2xl border bg-white p-4 shadow-sm overflow-x-auto">
@@ -39,6 +113,7 @@ onMounted(load)
             <th class="py-2 pr-3">Belt</th>
             <th class="py-2 pr-3">Stage</th>
             <th class="py-2 pr-3">Status</th>
+            <th class="py-2 pr-3">Batch</th>
             <th class="py-2 pr-3">Created</th>
           </tr>
         </thead>
@@ -59,12 +134,45 @@ onMounted(load)
                 {{ r.status.replace('_',' ') }}
               </span>
             </td>
+            <td class="py-2 pr-3">{{ r.batch_code ?? '—' }}</td>
             <td class="py-2 pr-3">{{ new Date(r.created_at).toLocaleString() }}</td>
           </tr>
         </tbody>
       </table>
-      <div v-if="loading" class="py-6 text-slate-500">Loading…</div>
-      <div v-else-if="rows.length===0" class="py-6 text-slate-500">No pads yet.</div>
+
+      <div v-if="loading" class="py-4 text-slate-500">Loading…</div>
+      <div v-else-if="rows.length === 0" class="py-4 text-slate-500">No pads found.</div>
+    </div>
+
+    <!-- Pagination controls -->
+    <div class="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
+      <div class="text-sm text-slate-600">
+        Showing
+        <span class="font-medium">{{ rows.length ? (page - 1) * pageSize + 1 : 0 }}</span>
+        –
+        <span class="font-medium">{{ Math.min(page * pageSize, total) }}</span>
+        of <span class="font-medium">{{ total }}</span> pads
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button
+          class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="page <= 1"
+          @click="prevPage"
+        >
+          ← Prev
+        </button>
+
+        <span class="text-sm text-slate-600">Page {{ page }} of {{ pages }}</span>
+
+        <button
+          class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="page >= pages"
+          @click="nextPage"
+        >
+          Next →
+        </button>
+      </div>
     </div>
   </div>
 </template>
