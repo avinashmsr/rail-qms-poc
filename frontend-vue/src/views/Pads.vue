@@ -26,6 +26,13 @@ const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)
 // ✅ SORTING state
 const sortBy = ref<string>('created_at')
 const sortDir = ref<'asc' | 'desc'>('desc')
+// Filters
+const fStatus = ref<string>('')         // '', PASSED, FAILED, IN_PROGRESS
+const fType = ref<string>('')           // '', TRANSIT, FREIGHT
+const fLine = ref<string>('')           // numeric string
+const fBelt = ref<string>('')
+const fStage = ref<string>('')
+const fQuery = ref<string>('')          // search serial/batch
 
 async function load() {
   loading.value = true
@@ -38,13 +45,21 @@ async function load() {
       sort_by: sortBy.value,
       sort_dir: sortDir.value,
     })
+
+    if (fStatus.value) params.append('status', fStatus.value)
+    if (fType.value) params.append('pad_type', fType.value)
+    if (fLine.value) params.append('line_id', fLine.value)
+    if (fBelt.value) params.append('belt_id', fBelt.value)
+    if (fStage.value) params.append('stage_id', fStage.value)
+    if (fQuery.value) params.append('q', fQuery.value.trim())
+
     const res = await fetch(`${api}/pads?${params.toString()}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     rows.value = data.items
     total.value = data.total
     // keep server-normalized values (if page capped)
-    page.value = data.page
+    page.value = data.page // in case backend normalizes it
   } catch (e: any) {
     error.value = e?.message ?? 'Failed to load pads'
   } finally {
@@ -89,6 +104,17 @@ function sortGlyph(col: string) {
   return sortDir.value === 'asc' ? '↑' : '↓'
 }
 
+function resetFilters() {
+  fStatus.value = ''
+  fType.value = ''
+  fLine.value = ''
+  fBelt.value = ''
+  fStage.value = ''
+  fQuery.value = ''
+  page.value = 1
+  load()
+}
+
 // if page size changes elsewhere, reload
 watch(pageSize, () => { page.value = 1; load() })
 
@@ -97,10 +123,11 @@ onMounted(load)
 
 <template>
   <div class="space-y-4">
+    <!-- Header / Controls -->
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 class="text-xl font-semibold">Pads</h2>
-        <p class="text-slate-500">Paginated list of brake pads</p>
+        <p class="text-slate-500">Sort by column headers; filter by status/type/line/belt/stage; search serial or batch</p>
       </div>
 
       <div class="flex items-center gap-3">
@@ -118,6 +145,58 @@ onMounted(load)
 
         <button @click="load" class="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
           Refresh
+        </button>
+      </div>
+    </div>
+
+     <!-- Filters row -->
+    <div class="flex flex-wrap gap-2 items-end">
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-500">Status</label>
+        <select v-model="fStatus" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm min-w-[140px]">
+          <option value="">All</option>
+          <option value="PASSED">PASSED</option>
+          <option value="FAILED">FAILED</option>
+          <option value="IN_PROGRESS">IN_PROGRESS</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-500">Type</label>
+        <select v-model="fType" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm min-w-[140px]">
+          <option value="">All</option>
+          <option value="TRANSIT">TRANSIT</option>
+          <option value="FREIGHT">FREIGHT</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-500">Line</label>
+        <input v-model="fLine" type="number" min="1" class="rounded-md border border-slate-300 px-2 py-1 text-sm w-24" />
+      </div>
+
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-500">Belt</label>
+        <input v-model="fBelt" type="number" min="1" class="rounded-md border border-slate-300 px-2 py-1 text-sm w-24" />
+      </div>
+
+      <div class="flex flex-col">
+        <label class="text-xs text-slate-500">Stage</label>
+        <input v-model="fStage" type="number" min="1" class="rounded-md border border-slate-300 px-2 py-1 text-sm w-24" />
+      </div>
+
+      <div class="flex flex-col flex-1 min-w-[220px]">
+        <label class="text-xs text-slate-500">Search (serial or batch)</label>
+        <input v-model="fQuery" type="text" placeholder="e.g., TR-01 or BC-"
+               class="rounded-md border border-slate-300 px-2 py-1 text-sm w-full" />
+      </div>
+
+      <div class="flex gap-2">
+        <button @click="page = 1; load()" class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100">
+          Apply
+        </button>
+        <button @click="resetFilters" class="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100">
+          Reset
         </button>
       </div>
     </div>
