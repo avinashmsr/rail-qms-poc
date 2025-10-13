@@ -21,26 +21,6 @@ def _list_pads_impl(
         q: str | None = Query(None, description="Search serial_number or batch_code"),
         ):
 
-    # SORTING: validate & build the ORDER BY
-    col = SORT_MAP.get(sort_by)
-    if col is None:
-        raise HTTPException(status_code=400, detail=f"Invalid sort_by: {sort_by}")
-    order = col.asc() if sort_dir.lower() == "asc" else col.desc()
-
-    # total rows
-    total = db.query(func.count(BrakePad.id)).scalar() or 0
-    # normalize page if too large
-    pages = max(1, math.ceil(total / page_size)) if total else 1
-    page = min(page, pages)
-
-    # SORTING applied here
-    qset = (
-        db.query(BrakePad)
-        .order_by(order, BrakePad.id.asc())  # tie-breaker for stable pagination
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    ).all()
-
     # Build filters
     filters = []
     st_enums = _coerce_enum_list(status, PadStatus)
@@ -65,6 +45,12 @@ def _list_pads_impl(
         filters.append(
             (BrakePad.serial_number.ilike(ql)) | (col_batch.ilike(ql))
         )
+
+    # Validate & build sorting
+    col = SORT_MAP.get(sort_by)
+    if col is None:
+        raise HTTPException(status_code=400, detail=f"Invalid sort_by: {sort_by}")
+    order = col.asc() if sort_dir.lower() == "asc" else col.desc()
 
     # Total (filtered)
     total = db.query(func.count(BrakePad.id)).filter(*filters).scalar() or 0
@@ -106,8 +92,8 @@ def _pad_to_dict(p: BrakePad) -> dict:
         "line_id": p.line_id,
         "belt_id": p.belt_id,
         "stage_id": p.stage_id,
-        "created_at": p.created_at,
         "batch_code": getattr(p, "batch_code", None),
+        "created_at": p.created_at,
     }
 
 # SORTING: allowlist of sortable columns (prevents SQL injection)
