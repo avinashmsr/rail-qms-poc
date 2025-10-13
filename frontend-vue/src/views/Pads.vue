@@ -243,7 +243,7 @@ onMounted(load)
             <td class="py-2 pr-3">{{ r.pad_type }}</td>
             <td class="py-2 pr-3">{{ r.line_id }}</td>
             <td class="py-2 pr-3">{{ r.belt_id }}</td>
-            <td class="py-2 pr-3">{{ r.stage_id }}</td>
+            <td class="py-2 pr-3">{{ r.stage_name ? `${r.stage_seq} · ${r.stage_name}` : r.stage_id }}</td>
             <td class="py-2 pr-3">
               <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs"
                     :class="{
