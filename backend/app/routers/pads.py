@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 import math
 from ..deps import get_db
-from ..models import BrakePad, PadStatus, PadType  # PadStatus, PadType enums in models
+from ..models import BrakePad, PadStatus, PadType, Stage  # PadStatus, PadType enums in models
 
 router = APIRouter()
 
@@ -60,6 +60,7 @@ def _list_pads_impl(
     # Page slice
     qset = (
         db.query(BrakePad)
+        .options(joinedload(BrakePad.stage))      # avoid N+1
         .filter(*filters)
         .order_by(order, BrakePad.id.asc())  # tie-breaker for stable paging
         .offset((page - 1) * page_size)
@@ -91,7 +92,9 @@ def _pad_to_dict(p: BrakePad) -> dict:
         "status": _enum_name_or_value(p.status),
         "line_id": p.line_id,
         "belt_id": p.belt_id,
-        "stage_id": p.stage_id,
+        "stage_id": p.stage_id, # this is raw Foreign Key
+        "stage_name": getattr(p.stage, "name", None),   # ← user-friendly attribute
+        "stage_seq": getattr(p.stage, "sequence", None),
         "batch_code": getattr(p, "batch_code", None),
         "created_at": p.created_at,
     }
