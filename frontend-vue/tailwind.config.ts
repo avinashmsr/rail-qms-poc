@@ -5,7 +5,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        maroon: '#800000', // ← custom maroon
+        orange: '#FFA500', // ← custom orange
       },
     },
   },
