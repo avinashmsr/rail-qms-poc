@@ -1,0 +1,108 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { paths } from '@/api'
+
+type PredictRes = {
+  quality: 'PASS'|'FAIL'|'AT_RISK'|string
+  probability: number
+  top_factors?: { feature: string; impact: number }[]
+  recommendations?: string[]
+}
+
+const mode = ref<'mix'|'pad'>('mix')
+
+// material mix form
+const form = ref({
+  resin_pct: 18, fiber_pct: 12, metal_powder_pct: 22, filler_pct: 28,
+  abrasives_pct: 10, binder_pct: 10,
+  temp_c: 120, pressure_mpa: 12, cure_time_s: 2400, moisture_pct: 0.4
+})
+const padId = ref<string>('')
+
+const loading = ref(false)
+const error = ref<string|null>(null)
+const result = ref<PredictRes | null>(null)
+
+async function submit() {
+  loading.value = true; error.value = null; result.value = null
+  try {
+    let res: Response
+    if (mode.value === 'mix') {
+      res = await fetch(paths.predictByMix(), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form.value) })
+    } else {
+      if (!padId.value) throw new Error('Provide a Pad ID')
+      res = await fetch(paths.predictByPad(padId.value))
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    result.value = await res.json()
+  } catch (e:any) { error.value = e?.message ?? 'Prediction failed' }
+  finally { loading.value = false }
+}
+</script>
+
+<template>
+  <div class="space-y-6">
+    <header>
+      <h2 class="text-xl font-semibold">AI Prediction</h2>
+      <p class="text-slate-500">Predict quality from material mix or by selecting a Pad</p>
+    </header>
+
+    <div class="flex gap-3">
+      <button class="rounded-md border px-3 py-1.5" :class="{'bg-slate-900 text-white': mode==='mix'}" @click="mode='mix'">By Material Mix</button>
+      <button class="rounded-md border px-3 py-1.5" :class="{'bg-slate-900 text-white': mode==='pad'}" @click="mode='pad'">By Pad</button>
+    </div>
+
+    <div v-if="mode==='mix'" class="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <label class="text-sm">Resin % <input v-model.number="form.resin_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Fiber % <input v-model.number="form.fiber_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Metal powder % <input v-model.number="form.metal_powder_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Filler % <input v-model.number="form.filler_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Abrasives % <input v-model.number="form.abrasives_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Binder % <input v-model.number="form.binder_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Mix temp (°C) <input v-model.number="form.temp_c" type="number" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Press (MPa) <input v-model.number="form.pressure_mpa" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Cure time (s) <input v-model.number="form.cure_time_s" type="number" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Moisture % <input v-model.number="form.moisture_pct" type="number" step="0.01" class="w-full border rounded px-2 py-1"></label>
+    </div>
+
+    <div v-else class="flex items-end gap-3">
+      <label class="text-sm">Pad ID
+        <input v-model="padId" placeholder="e.g. TR-01-03-00001 or UUID" class="border rounded px-2 py-1">
+      </label>
+    </div>
+
+    <div class="flex gap-2">
+      <button @click="submit" class="rounded-md bg-sky-600 text-white px-4 py-2" :disabled="loading">Predict</button>
+      <div v-if="loading" class="text-slate-500">Predicting…</div>
+    </div>
+
+    <div v-if="error" class="rounded-md bg-rose-50 text-rose-700 p-3 text-sm">{{ error }}</div>
+
+    <div v-if="result" class="grid gap-4 md:grid-cols-3">
+      <div class="rounded-xl border p-4">
+        <div class="text-sm text-slate-500">Prediction</div>
+        <div class="mt-1 text-2xl font-semibold">{{ result.quality }}</div>
+        <div class="text-slate-500">Confidence: {{ Math.round(result.probability*100) }}%</div>
+      </div>
+      <div class="rounded-xl border p-4 md:col-span-2" v-if="result.top_factors?.length">
+        <div class="text-sm text-slate-500 mb-2">Top contributing factors</div>
+        <div class="space-y-2">
+          <div v-for="f in result.top_factors" :key="f.feature" class="flex items-center gap-2">
+            <div class="w-40 text-sm">{{ f.feature }}</div>
+            <div class="flex-1 bg-slate-100 h-2 rounded">
+              <div class="h-2 rounded bg-sky-500" :style="{ width: Math.min(100, Math.abs(f.impact)*100) + '%' }"></div>
+            </div>
+            <div class="w-12 text-right text-xs">{{ (f.impact*100).toFixed(0) }}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border p-4 md:col-span-3" v-if="result.recommendations?.length">
+        <div class="text-sm text-slate-500 mb-2">Recommendations</div>
+        <ul class="list-disc pl-5">
+          <li v-for="(r, i) in result.recommendations" :key="i">{{ r }}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</template>
