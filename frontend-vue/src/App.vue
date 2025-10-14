@@ -8,7 +8,7 @@
         <RouterLink
           to="/"
           class="px-3 py-1.5 rounded-md hover:bg-slate-100"
-          active-class="bg-maroon text-white hover:bg-maroon"
+          active-class="bg-orange text-white hover:bg-orange"
         >
           Dashboard
         </RouterLink>
@@ -16,7 +16,7 @@
         <RouterLink
           to="/pads"
           class="px-3 py-1.5 rounded-md hover:bg-slate-100"
-          active-class="bg-maroon text-white hover:bg-maroon"
+          active-class="bg-orange text-white hover:bg-orange"
         >
           Pads
         </RouterLink>
