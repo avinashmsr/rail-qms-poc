@@ -24,12 +24,16 @@ async function load() {
 async function generateDemo() {
   try {
     const res = await fetch(`${api}/setup/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count: 150, lines: 2, belts_per_line: 3 }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    await load()
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count: 150, lines: 2, belts_per_line: 3 }),
+  })
+  if (!res.ok) {
+    const txt = await res.text()
+    console.error('generate API call failed:', txt)
+    return
+  }
+  await load() // <-- refresh totals
   } catch (e) {
     console.error(e)
   }
