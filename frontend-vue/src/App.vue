@@ -11,6 +11,11 @@
             active-class="bg-slate-900 text-white hover:bg-slate-900">Dashboard</RouterLink>
           <RouterLink to="/pads" class="px-3 py-1.5 rounded-md hover:bg-slate-100"
             active-class="bg-slate-900 text-white hover:bg-slate-900">Pads</RouterLink>
+          <RouterLink to="/ai/predict" class="underline">Predict</RouterLink>
+          <RouterLink to="/ai/xai" class="underline">XAI</RouterLink>
+          <RouterLink to="/ai/reviews" class="underline">Reviews</RouterLink>
+          <RouterLink to="/ai/models" class="underline">Models</RouterLink>
+          <RouterLink to="/ai/vision" class="underline">Vision</RouterLink>
         </nav>
       </div>
     </header>
