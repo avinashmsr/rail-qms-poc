@@ -2,10 +2,19 @@
 import { ref } from 'vue'
 import { paths } from '@/api'
 
+type TopFactor = { feature: string; impact: number }
+
 type PredictRes = {
-  quality: 'PASS'|'FAIL'|'AT_RISK'|string
+  // raw fields (as returned by backend)
+  label?: string
+  score?: number
+  explanation?: Record<string, number>
+  model_version?: string
+
+  // normalized fields (what the UI uses)
+  quality: string
   probability: number
-  top_factors?: { feature: string; impact: number }[]
+  top_factors: TopFactor[]
   recommendations?: string[]
 }
 
@@ -23,20 +32,61 @@ const loading = ref(false)
 const error = ref<string|null>(null)
 const result = ref<PredictRes | null>(null)
 
+function normalize(raw: any): PredictRes {
+  const quality = raw.quality ?? raw.label ?? 'UNKNOWN'
+  const probability =
+    typeof raw.probability === 'number'
+      ? raw.probability
+      : typeof raw.score === 'number'
+        ? raw.score
+        : NaN
+
+  const exp = raw.explanation ?? {}
+  const top_factors: TopFactor[] = Array.isArray(exp)
+    ? exp // already [{feature, impact}]
+    : Object.entries(exp).map(([feature, impact]) => ({
+        feature,
+        impact: Number(impact) || 0
+      }))
+  // sort by absolute contribution desc
+  top_factors.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+
+  return {
+    label: raw.label,
+    score: raw.score,
+    explanation: raw.explanation,
+    model_version: raw.model_version,
+    quality,
+    probability,
+    top_factors,
+    recommendations: raw.recommendations ?? [],
+  }
+}
+
 async function submit() {
-  loading.value = true; error.value = null; result.value = null
+  loading.value = true
+  error.value = null
+  result.value = null
   try {
     let res: Response
     if (mode.value === 'mix') {
-      res = await fetch(paths.predictByMix(), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form.value) })
+      res = await fetch(paths.predictByMix(), {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(form.value)
+      })
     } else {
       if (!padId.value) throw new Error('Provide a Pad ID')
       res = await fetch(paths.predictByPad(padId.value))
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    result.value = await res.json()
-  } catch (e:any) { error.value = e?.message ?? 'Prediction failed' }
-  finally { loading.value = false }
+    const raw = await res.json()
+    result.value = normalize(raw)
+  } catch (e:any) {
+    error.value = e?.message ?? 'Prediction failed'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -82,7 +132,10 @@ async function submit() {
       <div class="rounded-xl border p-4">
         <div class="text-sm text-slate-500">Prediction</div>
         <div class="mt-1 text-2xl font-semibold">{{ result.quality }}</div>
-        <div class="text-slate-500">Confidence: {{ Math.round(result.probability*100) }}%</div>
+        <div class="text-slate-500">
+        Confidence:
+        {{ Number.isFinite(result.probability) ? Math.round(result.probability * 100) : '—' }}%
+        </div>
       </div>
       <div class="rounded-xl border p-4 md:col-span-2" v-if="result.top_factors?.length">
         <div class="text-sm text-slate-500 mb-2">Top contributing factors</div>
