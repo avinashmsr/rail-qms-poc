@@ -74,3 +74,18 @@ class MaterialMix(Base):
     cure_time_s = Column(Float)
     moisture_pct = Column(Float)
     brakepad = relationship("BrakePad", back_populates="material_mix")
+
+class PredictionKind(str, Enum):
+    MIX = "MIX"
+    IMAGE = "IMAGE"
+
+class Prediction(Base):
+    __tablename__ = "predictions"
+    id = Column(Integer, primary_key=True)
+    brakepad_id = Column(String, ForeignKey("brake_pads.id"), nullable=False)
+    kind = Column(SqlEnum(PredictionKind), nullable=False)
+    model_version = Column(String, nullable=False)
+    label = Column(String)
+    score = Column(Float)
+    explanation_json = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
