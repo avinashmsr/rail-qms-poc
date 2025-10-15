@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import List
 from sqlalchemy import (
-Column, Integer, String, DateTime, Enum as SqlEnum, ForeignKey, Float, JSON
+Column, Integer, String, DateTime, Enum as SqlEnum, ForeignKey, Float, JSON, func
 )
 from sqlalchemy.orm import declarative_base, relationship
 import uuid
@@ -34,6 +34,7 @@ class BrakePad(Base):
                                 cascade="all, delete-orphan")
     # NEW: relationship so we can joinedload it
     stage = relationship("Stage", back_populates="pads")
+    predictions = relationship("Prediction", back_populates="brakepad", cascade="all, delete-orphan")
 
 class AssemblyLine(Base):
     __tablename__ = "assembly_lines"
@@ -82,10 +83,11 @@ class PredictionKind(str, Enum):
 class Prediction(Base):
     __tablename__ = "predictions"
     id = Column(Integer, primary_key=True)
-    brakepad_id = Column(String, ForeignKey("brake_pads.id"), nullable=False)
-    kind = Column(SqlEnum(PredictionKind), nullable=False)
+    brakepad_id = Column(String, ForeignKey("brake_pads.id"), nullable=True)  # ← allow NULL
+    kind = Column(Enum(PredictionKind), nullable=False)
     model_version = Column(String, nullable=False)
-    label = Column(String)
-    score = Column(Float)
-    explanation_json = Column(JSON)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    label = Column(String, nullable=True)
+    score = Column(Float, nullable=True)
+    explanation_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    brakepad = relationship("BrakePad", back_populates="predictions")
