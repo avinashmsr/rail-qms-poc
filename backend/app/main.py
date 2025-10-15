@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .database import engine
 from .models import Base
-from .routers import lines, pads, stats, setup, stages
+from .routers import lines, pads, stats, setup, stages, predict
 
 # -----------------------------------------------------------------------------
 # Create tables (if not using Alembic for migrations)
@@ -58,6 +58,7 @@ app.include_router(pads.router, prefix="/pads", tags=["pads"])
 app.include_router(stats.router, prefix="/stats", tags=["stats"])
 app.include_router(setup.router, prefix="/setup", tags=["setup"])
 app.include_router(stages.router, prefix="/stages", tags=["stages"])
+app.include_router(predict.router, prefix="/predict", tags=["predict"])
 
 # -----------------------------------------------------------------------------
 # Basic health/root endpoints
