@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from ..deps import get_db
-from ..models import Prediction, PredictionKind
+from ..models import Prediction, PredictionKind, BrakePad
 
 # ✅ ML functions live here (as observed)
 from ..ml.model import predict_mix
@@ -28,8 +29,15 @@ def predict_material_mix(req: PredictMixRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"predict_mix failed: {e}")
 
     # Log prediction for audit/expert-in-the-loop
+    # use None unless caller provided a real pad ID
+    bp_id = getattr(req, "brakepad_id", None) or None
+    if bp_id:
+        exists = db.query(BrakePad.id).filter(BrakePad.id == bp_id).first()
+        if not exists:
+            raise HTTPException(status_code=400, detail=f"Unknown brakepad_id: {bp_id}")
+        
     pred = Prediction(
-        brakepad_id=getattr(req, "brakepad_id", None) or "N/A",
+        brakepad_id=bp_id,                    # ← None is OK now
         kind=PredictionKind.MIX,
         model_version=result.get("model_version", "demo"),
         label=result.get("label"),
@@ -37,7 +45,13 @@ def predict_material_mix(req: PredictMixRequest, db: Session = Depends(get_db)):
         explanation_json=result.get("explanation"),  # shap/weights/etc.
     )
     db.add(pred)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # if someone sends an invalid FK despite our check
+        raise HTTPException(status_code=400, detail="Invalid brakepad_id")
+   
     return result
 
 # Back-compat alias so older clients using /predict/mix continue to work
