@@ -1,38 +1,69 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from ..deps import get_db
-from ..schemas import PredictMixRequest, PredictMixResponse, PredictImageRequest, PredictImageResponse
+from ..models import Prediction, PredictionKind
+
+# ✅ ML functions live here (as observed)
 from ..ml.model import predict_mix
 from ..ml.cv_defects import analyze_image
-from ..models import Prediction, PredictionKind
+
+# Pydantic schemas – existing schema names
+from ..schemas import (
+    PredictMixRequest, PredictMixResponse,
+    PredictImageRequest, PredictImageResponse,
+)
 
 router = APIRouter()
 
-@router.post("/mix", response_model=PredictMixResponse)
-def predict_mix_quality(req: PredictMixRequest, db: Session = Depends(get_db)):
-    result = predict_mix(req.dict())
+@router.post("/material_mix", response_model=PredictMixResponse, name="predict:material_mix")
+def predict_material_mix(req: PredictMixRequest, db: Session = Depends(get_db)):
+    """
+    Predict quality from a material mix/process parameters payload.
+    Frontend calls POST /predict/material_mix.
+    """
+    try:
+        result = predict_mix(req.dict())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"predict_mix failed: {e}")
+
+    # Log prediction for audit/expert-in-the-loop
     pred = Prediction(
-        brakepad_id=req.brakepad_id or "N/A",
+        brakepad_id=getattr(req, "brakepad_id", None) or "N/A",
         kind=PredictionKind.MIX,
-        model_version=result["model_version"],
-        label=result["label"],
-        score=result["score"],
-        explanation_json=result["explanation"],
+        model_version=result.get("model_version", "demo"),
+        label=result.get("label"),
+        score=result.get("score", 0.0),
+        explanation_json=result.get("explanation"),  # shap/weights/etc.
     )
-    db.add(pred); db.commit()
+    db.add(pred)
+    db.commit()
     return result
 
+# Back-compat alias so older clients using /predict/mix continue to work
+@router.post("/mix", response_model=PredictMixResponse, include_in_schema=False)
+def predict_material_mix_alias(req: PredictMixRequest, db: Session = Depends(get_db)):
+    return predict_material_mix(req, db)
 
-@router.post("/image", response_model=PredictImageResponse)
+
+@router.post("/image", response_model=PredictImageResponse, name="predict:image")
 def predict_image(req: PredictImageRequest, db: Session = Depends(get_db)):
-    result = analyze_image(req.image_base64, req.brakepad_id)
+    """
+    Run the CV model over a base64 image (synthetic or captured) and return detected defects.
+    """
+    try:
+        result = analyze_image(req.image_base64, req.brakepad_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"analyze_image failed: {e}")
+
     pred = Prediction(
         brakepad_id=req.brakepad_id or "N/A",
         kind=PredictionKind.IMAGE,
-        model_version=result["model_version"],
-        label=",".join(result["defects"]),
-        score=result["score"],
+        model_version=result.get("model_version", "demo"),
+        label=",".join(result.get("defects", [])),
+        score=result.get("score", 0.0),
         explanation_json={"stage_guess": result.get("stage_guess")},
     )
-    db.add(pred); db.commit()
+    db.add(pred)
+    db.commit()
     return result
