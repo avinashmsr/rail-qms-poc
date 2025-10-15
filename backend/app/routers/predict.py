@@ -70,8 +70,14 @@ def predict_image(req: PredictImageRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"analyze_image failed: {e}")
 
+    bp_id = req.brakepad_id or None
+    if bp_id:
+        exists = db.query(BrakePad.id).filter(BrakePad.id == bp_id).first()
+        if not exists:
+            raise HTTPException(400, detail=f"Unknown brakepad_id: {bp_id}")
+
     pred = Prediction(
-        brakepad_id=req.brakepad_id or "N/A",
+        brakepad_id=bp_id,
         kind=PredictionKind.IMAGE,
         model_version=result.get("model_version", "demo"),
         label=",".join(result.get("defects", [])),
@@ -79,5 +85,10 @@ def predict_image(req: PredictImageRequest, db: Session = Depends(get_db)):
         explanation_json={"stage_guess": result.get("stage_guess")},
     )
     db.add(pred)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid brakepad_id")
+
     return result
