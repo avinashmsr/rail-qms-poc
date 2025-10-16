@@ -88,6 +88,24 @@ async function submit() {
     loading.value = false
   }
 }
+
+// helper to normalize the label and choose badge colors
+function normQuality(q: string | undefined | null) {
+  return String(q ?? 'UNKNOWN').toUpperCase().replace('-', '_')
+}
+function badgeClasses(q: string | undefined | null) {
+  switch (normQuality(q)) {
+    case 'PASS':
+      return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    case 'FAIL':
+      return 'bg-rose-100 text-rose-800 border-rose-200'
+    case 'AT_RISK':
+      return 'bg-amber-100 text-amber-800 border-amber-200'
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200'
+  }
+}
+
 </script>
 
 <template>
@@ -131,12 +149,25 @@ async function submit() {
     <div v-if="result" class="grid gap-4 md:grid-cols-3">
       <div class="rounded-xl border p-4">
         <div class="text-sm text-slate-500">Prediction</div>
-        <div class="mt-1 text-2xl font-semibold">{{ result.quality }}</div>
-        <div class="text-slate-500">
-        Confidence:
-        {{ Number.isFinite(result.probability) ? Math.round(result.probability * 100) : '—' }}%
-        </div>
+        <div class="mt-2 flex items-center gap-3">
+          <span class="text-2xl font-semibold">{{ normQuality(result!.quality) }}</span>
+          <span 
+          class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs"
+          :class="badgeClasses(result!.quality)"
+          >
+          {{ normQuality(result!.quality).replace('_', ' ') }}
+        </span>
       </div>
+  <div class="mt-1 text-slate-500">
+    Confidence:
+    {{ Number.isFinite(result!.probability) ? Math.round(result!.probability * 100) : '—' }}%
+  </div>
+
+  <div v-if="result!.model_version" class="mt-1 text-xs text-slate-500">
+    Model: <code class="text-slate-700">{{ result!.model_version }}</code>
+  </div>
+</div>
+
       <div class="rounded-xl border p-4 md:col-span-2" v-if="result.top_factors?.length">
         <div class="text-sm text-slate-500 mb-2">Top contributing factors</div>
         <div class="space-y-2">
