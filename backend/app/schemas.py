@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 from typing import List, Optional, Literal, Dict
 
 class LineStats(BaseModel):
@@ -29,17 +29,31 @@ class PredictMixRequest(MixIn):
     brakepad_id: Optional[str] = None
 
 class PredictMixResponse(BaseModel):
-    label: Literal["PASS", "FAIL"]
-    score: float
-    explanation: Dict[str, float]
-    model_version: str
+    label: str | None = None
+    score: float | None = None
+    explanation: dict[str, float] | None = None
+    
+    ml_model_version: str = Field(
+        ...,
+        serialization_alias="model_version",
+        validation_alias=AliasChoices("model_version", "ml_model_version"),
+    )
+    # makes it flexible to populate by field-name too
+    model_config = ConfigDict(populate_by_name=True)
 
 class PredictImageRequest(BaseModel):
     brakepad_id: Optional[str] = None
     image_base64: Optional[str] = None
 
 class PredictImageResponse(BaseModel):
-    defects: List[str]
-    stage_guess: Optional[str] = None
-    score: float
-    model_version: str
+    defects: list[str] = []
+    score: float | None = None
+    stage_guess: str | None = None
+
+    ml_model_version: str = Field(
+        ...,
+        serialization_alias="model_version",
+        validation_alias=AliasChoices("model_version", "ml_model_version"),
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
