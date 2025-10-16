@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 
 from ..deps import get_db
-from ..models import Prediction, PredictionKind, BrakePad
+from ..models import Prediction, PredictionKind, BrakePad, MaterialMix
 
 # ✅ ML functions live here (as observed)
 from ..ml.model import predict_mix
@@ -92,3 +93,79 @@ def predict_image(req: PredictImageRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid brakepad_id")
 
     return result
+
+@router.get("/pad", response_model=PredictMixResponse, name="predict:pad")
+def predict_for_pad(
+    id: str = Query(..., description="Pad UUID or serial_number"),
+    db: Session = Depends(get_db),
+):
+    """
+    Predict quality for a *specific pad* by loading its latest MaterialMix
+    and calling the same predict_mix() logic under the hood.
+    Accepts either BrakePad.id (UUID) or BrakePad.serial_number.
+    """
+    # 1) Find the pad by id or serial_number
+    pad = (
+        db.query(BrakePad)
+        .filter(or_(BrakePad.id == id, BrakePad.serial_number == id))
+        .first()
+    )
+    if not pad:
+        raise HTTPException(status_code=404, detail=f"Pad not found: {id}")
+
+    # 2) Get the most recent material mix for this pad
+    mix = (
+        db.query(MaterialMix)
+        .filter(MaterialMix.brakepad_id == pad.id)
+        .order_by(MaterialMix.id.desc())
+        .first()
+    )
+    if not mix:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No material mix found for pad {pad.serial_number or pad.id}",
+        )
+
+    # 3) Build payload expected by predict_mix()
+    payload = {
+        "resin_pct":        mix.resin_pct,
+        "fiber_pct":        mix.fiber_pct,
+        "metal_powder_pct": mix.metal_powder_pct,
+        "filler_pct":       mix.filler_pct,
+        "abrasives_pct":    mix.abrasives_pct,
+        "binder_pct":       mix.binder_pct,
+        "temp_c":           mix.temp_c,
+        "pressure_mpa":     mix.pressure_mpa,
+        "cure_time_s":      mix.cure_time_s,
+        "moisture_pct":     mix.moisture_pct,
+    }
+
+    # 4) Run the model
+    try:
+        raw = predict_mix(payload)  # returns {label, score, explanation, model_version}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"predict_mix failed: {e}")
+
+    # 5) Persist for audit / expert-in-the-loop
+    pred = Prediction(
+        brakepad_id=pad.id,
+        kind=PredictionKind.MIX,  # reusing MIX since we predicted from the material mix
+        model_version=raw.get("model_version", "demo"),
+        label=raw.get("label"),
+        score=raw.get("score", 0.0),
+        explanation_json=raw.get("explanation"),
+    )
+    db.add(pred)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Failed to log prediction")
+
+    # 6) Optionally enrich with UI-friendly aliases (quality/probability)
+    return {
+        **raw,
+        "quality": raw.get("label"),
+        "probability": raw.get("score"),
+        "model_version": raw.get("model_version"),
+    }
