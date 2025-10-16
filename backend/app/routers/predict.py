@@ -42,7 +42,7 @@ def predict_material_mix(req: PredictMixRequest, db: Session = Depends(get_db)):
         kind=PredictionKind.MIX,
         model_version=result.get("model_version", "demo"),
         label=result.get("label"),
-        score=result.get("score", 0.0),
+        score=result.get("score", 0.0),           # score = P(FAIL)
         explanation_json=result.get("explanation"),  # shap/weights/etc.
     )
     db.add(pred)
@@ -52,7 +52,8 @@ def predict_material_mix(req: PredictMixRequest, db: Session = Depends(get_db)):
         db.rollback()
         # if someone sends an invalid FK despite our check
         raise HTTPException(status_code=400, detail="Invalid brakepad_id")
-   
+
+    # result already includes quality/probability (UI aliases)
     return result
 
 # Back-compat alias so older clients using /predict/mix continue to work
