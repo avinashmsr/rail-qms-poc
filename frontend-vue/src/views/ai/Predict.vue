@@ -3,19 +3,28 @@ import { ref } from 'vue'
 import { paths } from '@/api'
 
 type TopFactor = { feature: string; impact: number }
+type MaterialMix = {
+  resin_pct?: number; fiber_pct?: number; metal_powder_pct?: number; filler_pct?: number;
+  abrasives_pct?: number; binder_pct?: number;
+  temp_c?: number; pressure_mpa?: number; cure_time_s?: number; moisture_pct?: number;
+}
 
 type PredictRes = {
-  // raw fields (as returned by backend)
   label?: string
   score?: number
+  confidence?: number
   explanation?: Record<string, number>
   model_version?: string
 
-  // normalized fields (what the UI uses)
+  // normalized
   quality: string
   probability: number
   top_factors: TopFactor[]
   recommendations?: string[]
+
+  // NEW: only present for /predict/pad
+  pad?: { id: string; serial_number?: string }
+  material_mix?: MaterialMix
 }
 
 const mode = ref<'mix'|'pad'>('mix')
@@ -34,12 +43,7 @@ const result = ref<PredictRes | null>(null)
 
 function normalize(raw: any): PredictRes {
   const quality = raw.quality ?? raw.label ?? 'UNKNOWN'
-
-  // risk is P(FAIL) if present
   const risk = typeof raw.score === 'number' ? raw.score : NaN
-
-  // prefer 'confidence' if backend provided it; else prefer 'probability';
-  // else derive from risk + label; else NaN
   const probability =
     typeof raw.confidence === 'number'
       ? raw.confidence
@@ -52,22 +56,21 @@ function normalize(raw: any): PredictRes {
   const exp = raw.explanation ?? {}
   const top_factors: TopFactor[] = Array.isArray(exp)
     ? exp
-    : Object.entries(exp).map(([feature, impact]) => ({
-        feature,
-        impact: Number(impact) || 0
-      }))
-  // sort by absolute contribution desc
-  top_factors.sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
+    : Object.entries(exp).map(([feature, impact]) => ({ feature, impact: Number(impact) || 0 }))
+  top_factors.sort((a,b)=>Math.abs(b.impact)-Math.abs(a.impact))
 
   return {
     label: raw.label,
     score: raw.score,
+    confidence: raw.confidence,
     explanation: raw.explanation,
-    model_version: raw.model_version,   // stays the same (thanks to Pydantic alias)
+    model_version: raw.model_version,
     quality,
     probability,
     top_factors,
     recommendations: raw.recommendations ?? [],
+    pad: raw.pad,                                  // NEW
+    material_mix: raw.material_mix as MaterialMix, // NEW
   }
 }
 
@@ -196,5 +199,28 @@ function badgeClasses(q: string | undefined | null) {
         </ul>
       </div>
     </div>
+    <!-- Material Mix Used (shown when backend provided it, i.e., By Pad) -->
+<div v-if="result?.material_mix" class="rounded-xl border p-4 md:col-span-2">
+  <div class="text-sm text-slate-500 mb-2">
+    Material mix used
+    <span v-if="result?.pad?.serial_number" class="ml-2 text-xs text-slate-600">
+      (Pad: {{ result.pad.serial_number }})
+    </span>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+    <div><span class="text-slate-500">Resin %</span> <span class="ml-2 font-medium">{{ result.material_mix!.resin_pct }}</span></div>
+    <div><span class="text-slate-500">Fiber %</span> <span class="ml-2 font-medium">{{ result.material_mix!.fiber_pct }}</span></div>
+    <div><span class="text-slate-500">Metal powder %</span> <span class="ml-2 font-medium">{{ result.material_mix!.metal_powder_pct }}</span></div>
+    <div><span class="text-slate-500">Filler %</span> <span class="ml-2 font-medium">{{ result.material_mix!.filler_pct }}</span></div>
+    <div><span class="text-slate-500">Abrasives %</span> <span class="ml-2 font-medium">{{ result.material_mix!.abrasives_pct }}</span></div>
+    <div><span class="text-slate-500">Binder %</span> <span class="ml-2 font-medium">{{ result.material_mix!.binder_pct }}</span></div>
+    <div><span class="text-slate-500">Mix temp (°C)</span> <span class="ml-2 font-medium">{{ result.material_mix!.temp_c }}</span></div>
+    <div><span class="text-slate-500">Press (MPa)</span> <span class="ml-2 font-medium">{{ result.material_mix!.pressure_mpa }}</span></div>
+    <div><span class="text-slate-500">Cure time (s)</span> <span class="ml-2 font-medium">{{ result.material_mix!.cure_time_s }}</span></div>
+    <div><span class="text-slate-500">Moisture %</span> <span class="ml-2 font-medium">{{ result.material_mix!.moisture_pct }}</span></div>
+  </div>
+</div>
+
   </div>
 </template>
