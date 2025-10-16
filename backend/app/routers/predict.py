@@ -13,7 +13,7 @@ from ..ml.cv_defects import analyze_image
 # Pydantic schemas – existing schema names
 from ..schemas import (
     PredictMixRequest, PredictMixResponse,
-    PredictImageRequest, PredictImageResponse,
+    PredictImageRequest, PredictImageResponse, PredictPadResponse
 )
 
 router = APIRouter()
@@ -95,7 +95,7 @@ def predict_image(req: PredictImageRequest, db: Session = Depends(get_db)):
 
     return result
 
-@router.get("/pad", response_model=PredictMixResponse, name="predict:pad")
+@router.get("/pad", response_model=PredictPadResponse, name="predict:pad")
 def predict_for_pad(
     id: str = Query(..., description="Pad UUID or serial_number"),
     db: Session = Depends(get_db),
@@ -127,8 +127,8 @@ def predict_for_pad(
             detail=f"No material mix found for pad {pad.serial_number or pad.id}",
         )
 
-    # 3) Build payload expected by predict_mix()
-    payload = {
+    # 3) Build payload expected by predict_mix() The exact features we used to predict (matches model.py)
+    mix_payload = {
         "resin_pct":        mix.resin_pct,
         "fiber_pct":        mix.fiber_pct,
         "metal_powder_pct": mix.metal_powder_pct,
@@ -143,11 +143,11 @@ def predict_for_pad(
 
     # 4) Run the model
     try:
-        raw = predict_mix(payload)  # returns {label, score, explanation, model_version}
+        raw = predict_mix(mix_payload)  # returns label, score=P(FAIL), confidence, quality/probability, model_version
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"predict_mix failed: {e}")
 
-    # 5) Persist for audit / expert-in-the-loop
+    # 5) Persist for audit / expert-in-the-loop Log prediction
     pred = Prediction(
         brakepad_id=pad.id,
         kind=PredictionKind.MIX,  # reusing MIX since we predicted from the material mix
@@ -163,10 +163,9 @@ def predict_for_pad(
         db.rollback()
         raise HTTPException(status_code=400, detail="Failed to log prediction")
 
-    # 6) Optionally enrich with UI-friendly aliases (quality/probability)
+    # 6) Enrich response with pad meta + material mix used
     return {
         **raw,
-        "quality": raw.get("label"),
-        "probability": raw.get("score"),
-        "model_version": raw.get("model_version"),
+        "pad": {"id": pad.id, "serial_number": pad.serial_number},
+        "material_mix": mix_payload,
     }
