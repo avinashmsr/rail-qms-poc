@@ -31,8 +31,11 @@ class PredictMixRequest(MixIn):
 class PredictMixResponse(BaseModel):
     label: str | None = None
     score: float | None = None
+    confidence: float | None = None
     explanation: dict[str, float] | None = None
-    
+    quality: str | None = None
+    probability: float | None = None
+
     ml_model_version: str = Field(
         ...,
         serialization_alias="model_version",
@@ -57,3 +60,25 @@ class PredictImageResponse(BaseModel):
     )
 
     model_config = ConfigDict(populate_by_name=True)
+
+# --- NEW small DTOs for pad + mix ---
+class MaterialMixOut(BaseModel):
+    resin_pct: float | None = None
+    fiber_pct: float | None = None
+    metal_powder_pct: float | None = None
+    filler_pct: float | None = None
+    abrasives_pct: float | None = None
+    binder_pct: float | None = None
+    temp_c: float | None = None
+    pressure_mpa: float | None = None
+    cure_time_s: float | None = None
+    moisture_pct: float | None = None
+
+class PadMeta(BaseModel):
+    id: str
+    serial_number: str | None = None
+
+# --- NEW: response for /predict/pad that includes pad & material_mix ---
+class PredictPadResponse(PredictMixResponse):
+    pad: PadMeta | None = None
+    material_mix: MaterialMixOut | None = None
