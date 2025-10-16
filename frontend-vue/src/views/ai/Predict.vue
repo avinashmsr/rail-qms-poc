@@ -34,16 +34,24 @@ const result = ref<PredictRes | null>(null)
 
 function normalize(raw: any): PredictRes {
   const quality = raw.quality ?? raw.label ?? 'UNKNOWN'
+
+  // risk is P(FAIL) if present
+  const risk = typeof raw.score === 'number' ? raw.score : NaN
+
+  // prefer 'confidence' if backend provided it; else prefer 'probability';
+  // else derive from risk + label; else NaN
   const probability =
-    typeof raw.probability === 'number'
-      ? raw.probability
-      : typeof raw.score === 'number'
-        ? raw.score
-        : NaN
+    typeof raw.confidence === 'number'
+      ? raw.confidence
+      : typeof raw.probability === 'number'
+        ? raw.probability
+        : Number.isFinite(risk)
+          ? (String(quality).toUpperCase() === 'FAIL' ? risk : 1 - risk)
+          : NaN
 
   const exp = raw.explanation ?? {}
   const top_factors: TopFactor[] = Array.isArray(exp)
-    ? exp // already [{feature, impact}]
+    ? exp
     : Object.entries(exp).map(([feature, impact]) => ({
         feature,
         impact: Number(impact) || 0
@@ -55,7 +63,7 @@ function normalize(raw: any): PredictRes {
     label: raw.label,
     score: raw.score,
     explanation: raw.explanation,
-    model_version: raw.model_version,
+    model_version: raw.model_version,   // stays the same (thanks to Pydantic alias)
     quality,
     probability,
     top_factors,
