@@ -24,6 +24,7 @@ def predict_material_mix(req: PredictMixRequest, db: Session = Depends(get_db)):
     """
     Predict quality from a material mix/process parameters payload.
     Frontend calls POST /predict/material_mix.
+    PredictMixRequest inherits attributes from MixIn base class
     """
     try:
         result = predict_mix(req.dict())

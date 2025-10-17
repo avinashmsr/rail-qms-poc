@@ -14,16 +14,30 @@ class GenerateSyntheticRequest(BaseModel):
     belts_per_line: int = 3
 
 class MixIn(BaseModel):
-    resin_pct: float
-    fiber_pct: float
-    metal_powder_pct: float
-    filler_pct: float
-    abrasives_pct: float
-    binder_pct: float
+    resin_pct: float = Field(ge=0, le=100)
+    fiber_pct: float = Field(ge=0, le=100)
+    metal_powder_pct: float = Field(ge=0, le=100)
+    filler_pct: float = Field(ge=0, le=100)
+    abrasives_pct: float = Field(ge=0, le=100)
+    binder_pct: float = Field(ge=0, le=100)
     temp_c: float
     pressure_mpa: float
     cure_time_s: float
-    moisture_pct: float
+    moisture_pct: float = Field(ge=0, le=100)
+
+    # prefer forbidding unknowns so clients can’t send typos
+    model_config = ConfigDict(extra='forbid')
+
+    @model_validator(mode='after')
+    def _sum_to_100(self):
+        EPS = 0.01
+        total = (
+            float(self.resin_pct) + float(self.fiber_pct) + float(self.metal_powder_pct) +
+            float(self.filler_pct) + float(self.abrasives_pct) + float(self.binder_pct)
+        )
+        if abs(total - 100.0) > EPS:
+            raise ValueError(f"Material mix percentages must sum to 100%. Got {total:.2f}%.")
+        return self
 
 class PredictMixRequest(MixIn):
     brakepad_id: Optional[str] = None
