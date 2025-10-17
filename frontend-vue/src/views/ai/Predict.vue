@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { paths } from '@/api'
 
 type TopFactor = { feature: string; impact: number }
@@ -40,6 +40,32 @@ const padId = ref<string>('')
 const loading = ref(false)
 const error = ref<string|null>(null)
 const result = ref<PredictRes | null>(null)
+
+const EPS = 0.01 // small tolerance for floating rounding
+
+const totalPct = computed(() => {
+  const m = form.value
+  return (
+    Number(m.resin_pct || 0) +
+    Number(m.fiber_pct || 0) +
+    Number(m.metal_powder_pct || 0) +
+    Number(m.filler_pct || 0) +
+    Number(m.abrasives_pct || 0) +
+    Number(m.binder_pct || 0)
+  )
+})
+const remainingPct = computed(() => 100 - totalPct.value)
+const mixPctValid = computed(() => Math.abs(remainingPct.value) <= EPS)
+const mixPctOver  = computed(() => remainingPct.value < -EPS)
+const mixPctUnder = computed(() => remainingPct.value >  EPS)
+
+// Predict is disabled when:
+// - MIX mode and sum != 100
+// - PAD mode and no padId
+const canPredict = computed(() => {
+  if (mode.value === 'mix') return mixPctValid.value
+  return !!padId.value?.trim()
+})
 
 function normalize(raw: any): PredictRes {
   const quality = raw.quality ?? raw.label ?? 'UNKNOWN'
@@ -132,12 +158,12 @@ function badgeClasses(q: string | undefined | null) {
     </div>
 
     <div v-if="mode==='mix'" class="grid grid-cols-2 md:grid-cols-3 gap-3">
-      <label class="text-sm">Resin % <input v-model.number="form.resin_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
-      <label class="text-sm">Fiber % <input v-model.number="form.fiber_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
-      <label class="text-sm">Metal powder % <input v-model.number="form.metal_powder_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
-      <label class="text-sm">Filler % <input v-model.number="form.filler_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
-      <label class="text-sm">Abrasives % <input v-model.number="form.abrasives_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
-      <label class="text-sm">Binder % <input v-model.number="form.binder_pct" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Resin % <input v-model.number="form.resin_pct" type="number" step="0.1" min="0" max="100" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Fiber % <input v-model.number="form.fiber_pct" type="number" step="0.1" min="0" max="100" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Metal powder % <input v-model.number="form.metal_powder_pct" type="number" step="0.1" min="0" max="100" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Filler % <input v-model.number="form.filler_pct" type="number" step="0.1" min="0" max="100" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Abrasives % <input v-model.number="form.abrasives_pct" type="number" step="0.1" min="0" max="100" class="w-full border rounded px-2 py-1"></label>
+      <label class="text-sm">Binder % <input v-model.number="form.binder_pct" type="number" step="0.1" min="0" max="100" class="w-full border rounded px-2 py-1"></label>
       <label class="text-sm">Mix temp (°C) <input v-model.number="form.temp_c" type="number" class="w-full border rounded px-2 py-1"></label>
       <label class="text-sm">Press (MPa) <input v-model.number="form.pressure_mpa" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
       <label class="text-sm">Cure time (s) <input v-model.number="form.cure_time_s" type="number" class="w-full border rounded px-2 py-1"></label>
@@ -150,10 +176,37 @@ function badgeClasses(q: string | undefined | null) {
       </label>
     </div>
 
-    <div class="flex gap-2">
-      <button @click="submit" class="rounded-md bg-sky-600 text-white px-4 py-2" :disabled="loading">Predict</button>
-      <div v-if="loading" class="text-slate-500">Predicting…</div>
-    </div>
+    <!-- validation helper under the grid -->
+<div class="col-span-full text-sm"
+     :class="{
+       'text-emerald-700': mixPctValid,
+       'text-amber-700': mixPctUnder,
+       'text-rose-700': mixPctOver
+     }"
+     aria-live="polite">
+  <template v-if="mixPctValid">
+    ✅ Total = {{ totalPct.toFixed(1) }}% (OK)
+  </template>
+  <template v-else-if="mixPctUnder">
+    ⚠️ Total = {{ totalPct.toFixed(1) }}% — {{ Math.abs(remainingPct).toFixed(1) }}% remaining to reach 100%
+  </template>
+  <template v-else>
+    ⚠️ Total = {{ totalPct.toFixed(1) }}% — over by {{ Math.abs(remainingPct).toFixed(1) }}%
+  </template>
+</div>
+
+<!-- Predict button -->
+<div class="flex gap-2">
+  <button
+    @click="submit"
+    class="rounded-md px-4 py-2 text-white"
+    :class="canPredict ? 'bg-sky-600 hover:bg-sky-700' : 'bg-slate-300 cursor-not-allowed'"
+    :disabled="!canPredict"
+  >
+    Predict
+  </button>
+  <div v-if="loading" class="text-slate-500">Predicting…</div>
+</div>
 
     <div v-if="error" class="rounded-md bg-rose-50 text-rose-700 p-3 text-sm">{{ error }}</div>
 
