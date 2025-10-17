@@ -9,6 +9,7 @@ from ..models import Prediction, PredictionKind, BrakePad, MaterialMix
 # ✅ ML functions live here (as observed)
 from ..ml.model import predict_mix
 from ..ml.cv_defects import analyze_image
+from ..ml import model as ml_model  # gives access to NOMINAL, WEIGHTS, thresholds
 
 # Pydantic schemas – existing schema names
 from ..schemas import (
@@ -169,3 +170,22 @@ def predict_for_pad(
         "pad": {"id": pad.id, "serial_number": pad.serial_number},
         "material_mix": mix_payload,
     }
+
+@router.get("/nominal", name="predict:nominal")
+def get_nominal():
+    """
+    Model metadata for UI highlighting: nominal ranges, weights, and thresholds.
+    """
+    out = {
+        "model_version": getattr(ml_model, "MODEL_VERSION", "unknown"),
+        "nominal": getattr(ml_model, "NOMINAL", {}),
+        "weights": getattr(ml_model, "WEIGHTS", {}),
+    }
+    # Optional extras (if defined in ml/model.py)
+    if hasattr(ml_model, "MIX_FAIL_THRESHOLD"):
+        out["threshold"] = ml_model.MIX_FAIL_THRESHOLD
+    low = getattr(ml_model, "LOW", None)
+    high = getattr(ml_model, "HIGH", None)
+    if low is not None and high is not None and low < high:
+        out["risk_band"] = [low, high]
+    return out
