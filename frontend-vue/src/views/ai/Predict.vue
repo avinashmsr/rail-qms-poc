@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { paths } from '@/api'
 
 type TopFactor = { feature: string; impact: number }
@@ -25,6 +25,7 @@ type PredictRes = {
   // NEW: only present for /predict/pad
   pad?: { id: string; serial_number?: string }
   material_mix?: MaterialMix
+  source: 'mix' | 'pad'
 }
 
 const mode = ref<'mix'|'pad'>('mix')
@@ -67,7 +68,14 @@ const canPredict = computed(() => {
   return !!padId.value?.trim()
 })
 
-function normalize(raw: any): PredictRes {
+// 🔹 Clear outputs when switching tabs
+watch(mode, () => {
+  result.value = null
+  error.value = null
+})
+
+//Normalize function remembers current UI state
+function normalize(raw: any, source: 'mix' | 'pad'): PredictRes {
   const quality = raw.quality ?? raw.label ?? 'UNKNOWN'
   const risk = typeof raw.score === 'number' ? raw.score : NaN
   const probability =
@@ -82,7 +90,11 @@ function normalize(raw: any): PredictRes {
   const exp = raw.explanation ?? {}
   const top_factors: TopFactor[] = Array.isArray(exp)
     ? exp
-    : Object.entries(exp).map(([feature, impact]) => ({ feature, impact: Number(impact) || 0 }))
+    : Object.entries(exp).map(([feature, impact]) => ({
+      feature,
+      impact: Number(impact) || 0
+    }))
+
   top_factors.sort((a,b)=>Math.abs(b.impact)-Math.abs(a.impact))
 
   return {
@@ -97,13 +109,14 @@ function normalize(raw: any): PredictRes {
     recommendations: raw.recommendations ?? [],
     pad: raw.pad,                                  // NEW
     material_mix: raw.material_mix as MaterialMix, // NEW
+    source,                          // ← record source
   }
 }
 
 async function submit() {
   loading.value = true
   error.value = null
-  result.value = null
+  // result.value = null --- (don't clear result here; we want to keep last result until new one arrives)
   try {
     let res: Response
     if (mode.value === 'mix') {
@@ -118,7 +131,7 @@ async function submit() {
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const raw = await res.json()
-    result.value = normalize(raw)
+    result.value = normalize(raw, mode.value)   // ← pass active tab as source
   } catch (e:any) {
     error.value = e?.message ?? 'Prediction failed'
   } finally {
@@ -168,15 +181,8 @@ function badgeClasses(q: string | undefined | null) {
       <label class="text-sm">Press (MPa) <input v-model.number="form.pressure_mpa" type="number" step="0.1" class="w-full border rounded px-2 py-1"></label>
       <label class="text-sm">Cure time (s) <input v-model.number="form.cure_time_s" type="number" class="w-full border rounded px-2 py-1"></label>
       <label class="text-sm">Moisture % <input v-model.number="form.moisture_pct" type="number" step="0.01" class="w-full border rounded px-2 py-1"></label>
-    </div>
 
-    <div v-else class="flex items-end gap-3">
-      <label class="text-sm">Pad ID
-        <input v-model="padId" placeholder="e.g. TR-01-03-00001 or UUID" class="border rounded px-2 py-1">
-      </label>
-    </div>
-
-    <!-- validation helper under the grid -->
+      <!-- validation helper under the grid -->
 <div class="col-span-full text-sm"
      :class="{
        'text-emerald-700': mixPctValid,
@@ -194,6 +200,13 @@ function badgeClasses(q: string | undefined | null) {
     ⚠️ Total = {{ totalPct.toFixed(1) }}% — over by {{ Math.abs(remainingPct).toFixed(1) }}%
   </template>
 </div>
+    </div>
+
+    <div v-else class="flex items-end gap-3">
+      <label class="text-sm">Pad ID
+        <input v-model="padId" placeholder="e.g. TR-01-03-00001 or UUID" class="border rounded px-2 py-1">
+      </label>
+    </div>
 
 <!-- Predict button -->
 <div class="flex gap-2">
@@ -210,7 +223,8 @@ function badgeClasses(q: string | undefined | null) {
 
     <div v-if="error" class="rounded-md bg-rose-50 text-rose-700 p-3 text-sm">{{ error }}</div>
 
-    <div v-if="result" class="grid gap-4 md:grid-cols-3">
+    <!-- RESULTS: only show when result belongs to active tab -->
+    <div v-if="result && result.source === mode" class="grid gap-4 md:grid-cols-3">
       <div class="rounded-xl border p-4">
         <div class="text-sm text-slate-500">Prediction</div>
         <div class="mt-2 flex items-center gap-3">
