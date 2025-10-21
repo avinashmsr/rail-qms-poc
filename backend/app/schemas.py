@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, AliasChoices, ConfigDict
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict, model_validator
 from typing import List, Optional, Literal, Dict
 
 class LineStats(BaseModel):
